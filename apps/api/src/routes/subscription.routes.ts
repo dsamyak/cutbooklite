@@ -7,6 +7,7 @@ const router = Router();
 router.use(authenticate);
 router.use(requireRole('OWNER'));
 
+// No subscription gate here — lapsed owners must still be able to CHECK their status
 router.get('/', getSubscriptionStatus);
 
 export default router;

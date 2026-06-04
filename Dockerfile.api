@@ -1,23 +1,29 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
 
-# Install dependencies for turbo and npm workspaces
-COPY package.json turbo.json ./
+# Copy manifests first for better layer caching
+COPY package.json package-lock.json turbo.json ./
 COPY apps/api/package.json ./apps/api/
 COPY packages/shared-types/package.json ./packages/shared-types/
 COPY apps/web/package.json ./apps/web/
 
-RUN npm install
+RUN npm ci
 
 # Copy source
 COPY . .
 
 # Build shared types and API
 RUN npx turbo run build --filter=@salon/api...
+
+# Generate Prisma client
 RUN cd apps/api && npx prisma generate
 
+# ── Runner ───────────────────────────────────────────────────
 FROM node:20-alpine AS runner
 WORKDIR /app
+
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 apiuser
 
 COPY --from=builder /app/package.json ./
 COPY --from=builder /app/node_modules ./node_modules
@@ -27,8 +33,16 @@ COPY --from=builder /app/apps/api/node_modules ./apps/api/node_modules
 COPY --from=builder /app/apps/api/prisma ./apps/api/prisma
 
 WORKDIR /app/apps/api
+
 ENV NODE_ENV=production
 ENV PORT=3000
 
+# Run migrations then start the server
+CMD npx prisma migrate deploy && node dist/index.js
+
+USER apiuser
+
 EXPOSE 3000
-CMD ["npm", "run", "start"]
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+  CMD wget -qO- http://localhost:3000/health || exit 1

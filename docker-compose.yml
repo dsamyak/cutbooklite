@@ -1,0 +1,64 @@
+version: '3.9'
+
+services:
+  # ── PostgreSQL ──────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: cutbook_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: cutbook_db
+      POSTGRES_USER: cutbook_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cutbook_dev_password}
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U cutbook_user -d cutbook_db']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── API ─────────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: cutbook_api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: 3000
+      DATABASE_URL: postgresql://cutbook_user:${POSTGRES_PASSWORD:-cutbook_dev_password}@postgres:5432/cutbook_db
+      JWT_SECRET: ${JWT_SECRET}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost}
+      TRIAL_PERIOD_DAYS: ${TRIAL_PERIOD_DAYS:-14}
+      ADMIN_BOOTSTRAP_EMAIL: ${ADMIN_BOOTSTRAP_EMAIL}
+    ports:
+      - '3000:3000'
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:3000/health || exit 1']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── Web (Nginx) ─────────────────────────────────────────────
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:3000/v1}
+    container_name: cutbook_web
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - '80:80'
+
+volumes:
+  postgres_data:

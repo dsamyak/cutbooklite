@@ -1,38 +1,67 @@
-name: CI/CD Pipeline
+name: CI — Lint, Type Check & Build
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ['main', 'develop']
   pull_request:
-    branches: [ "main" ]
+    branches: ['main']
 
 jobs:
-  build-and-test:
+  ci:
+    name: Lint + Type Check + Build
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
-    - uses: actions/setup-node@v3
-      with:
-        node-version: '20'
-        cache: 'npm'
-    
-    - name: Install dependencies
-      run: npm ci
+      - uses: actions/checkout@v4
 
-    - name: Build all packages
-      run: npx turbo run build
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
 
-    # In a real scenario, tests would run here
-    # - name: Run tests
-    #   run: npx turbo run test
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check all packages
+        run: npx turbo run build --dry=json
+
+      - name: Build all packages
+        run: npx turbo run build
 
   deploy:
-    needs: build-and-test
-    if: github.ref == 'refs/heads/main'
+    name: Deploy to Production
+    needs: ci
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
+    environment: production
     steps:
-    - uses: actions/checkout@v3
-    
-    - name: Echo Deploy Step
-      run: echo "Deploying to production (e.g., Render/Railway) using Docker..."
-      # This is a placeholder for actual deploy scripts.
+      - uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push API image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.api
+          push: true
+          tags: ghcr.io/${{ github.repository }}/api:latest
+
+      - name: Build and push Web image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.web
+          push: true
+          tags: ghcr.io/${{ github.repository }}/web:latest
+          build-args: |
+            VITE_API_URL=${{ secrets.VITE_API_URL }}
+
+      # Add your deployment step here (SSH deploy, Render webhook, Railway, etc.)
+      - name: Notify deploy
+        run: echo "Docker images pushed. Configure your deploy target above."

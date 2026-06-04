@@ -1,21 +1,24 @@
 import { Router } from 'express';
-import { createSalon, getSalons, getSalonById, updateSalon, deleteSalon, getSalonBarbers, addBarberToSalon, removeBarberFromSalon } from '../controllers/salons.controller';
-import { authenticate, requireRole } from '../middleware/auth';
+import {
+  createSalon, getSalons, getSalonById, updateSalon, deleteSalon,
+  getSalonBarbers, addBarberToSalon, removeBarberFromSalon
+} from '../controllers/salons.controller';
+import { authenticate, requireRole, requireSubscription } from '../middleware/auth';
 
 const router = Router();
 
 router.use(authenticate);
+router.use(requireRole('OWNER'));
+router.use(requireSubscription);
 
-// Owner only routes
-router.post('/', requireRole('OWNER'), createSalon);
-router.get('/', requireRole('OWNER'), getSalons);
-router.get('/:id', requireRole('OWNER'), getSalonById);
-router.patch('/:id', requireRole('OWNER'), updateSalon);
-router.delete('/:id', requireRole('OWNER'), deleteSalon);
+router.post('/', createSalon);
+router.get('/', getSalons);
+router.get('/:id', getSalonById);
+router.patch('/:id', updateSalon);
+router.delete('/:id', deleteSalon);
 
-// Salon Barbers management
-router.get('/:id/barbers', requireRole('OWNER'), getSalonBarbers);
-router.post('/:id/barbers/:barber_id', requireRole('OWNER'), addBarberToSalon);
-router.delete('/:id/barbers/:barber_id', requireRole('OWNER'), removeBarberFromSalon);
+router.get('/:id/barbers', getSalonBarbers);
+router.post('/:id/barbers/:barber_id', addBarberToSalon);
+router.delete('/:id/barbers/:barber_id', removeBarberFromSalon);
 
 export default router;

@@ -1,10 +1,11 @@
 import { Router } from 'express';
 import { logService, getServices, updateService, deleteService } from '../controllers/services.controller';
-import { authenticate } from '../middleware/auth';
+import { authenticate, requireSubscription } from '../middleware/auth';
 
 const router = Router();
 
 router.use(authenticate);
+router.use(requireSubscription);
 
 router.post('/', logService);
 router.get('/', getServices);
