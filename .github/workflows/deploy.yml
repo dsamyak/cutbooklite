@@ -1,0 +1,38 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - uses: actions/setup-node@v3
+      with:
+        node-version: '20'
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Build all packages
+      run: npx turbo run build
+
+    # In a real scenario, tests would run here
+    # - name: Run tests
+    #   run: npx turbo run test
+
+  deploy:
+    needs: build-and-test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Echo Deploy Step
+      run: echo "Deploying to production (e.g., Render/Railway) using Docker..."
+      # This is a placeholder for actual deploy scripts.

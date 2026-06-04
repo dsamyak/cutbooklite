@@ -1,0 +1,34 @@
+FROM node:20-alpine AS builder
+WORKDIR /app
+
+# Install dependencies for turbo and npm workspaces
+COPY package.json turbo.json ./
+COPY apps/api/package.json ./apps/api/
+COPY packages/shared-types/package.json ./packages/shared-types/
+COPY apps/web/package.json ./apps/web/
+
+RUN npm install
+
+# Copy source
+COPY . .
+
+# Build shared types and API
+RUN npx turbo run build --filter=@salon/api...
+RUN cd apps/api && npx prisma generate
+
+FROM node:20-alpine AS runner
+WORKDIR /app
+
+COPY --from=builder /app/package.json ./
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/apps/api/package.json ./apps/api/
+COPY --from=builder /app/apps/api/dist ./apps/api/dist
+COPY --from=builder /app/apps/api/node_modules ./apps/api/node_modules
+COPY --from=builder /app/apps/api/prisma ./apps/api/prisma
+
+WORKDIR /app/apps/api
+ENV NODE_ENV=production
+ENV PORT=3000
+
+EXPOSE 3000
+CMD ["npm", "run", "start"]
