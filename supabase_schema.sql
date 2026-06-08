@@ -15,6 +15,7 @@ CREATE TABLE salons (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   owner_id UUID REFERENCES owners(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
+  address TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
