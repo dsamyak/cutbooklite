@@ -1,4 +1,6 @@
 import { create } from 'zustand';
+import { supabase } from '../lib/supabase';
+import type { Session } from '@supabase/supabase-js';
 
 export interface User {
   id: string;
@@ -10,33 +12,37 @@ export interface User {
 
 interface AuthState {
   user: User | null;
-  token: string | null;
-  setAuth: (user: User, token: string) => void;
-  logout: () => void;
+  session: Session | null;
+  setAuth: (user: User | null, session: Session | null) => void;
+  logout: () => Promise<void>;
 }
 
-const parseUser = (): User | null => {
-  try {
-    const raw = localStorage.getItem('user');
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
-};
-
 export const useAuthStore = create<AuthState>((set) => ({
-  user: parseUser(),
-  token: localStorage.getItem('token') || null,
+  user: null,
+  session: null,
 
-  setAuth: (user, token) => {
-    localStorage.setItem('user', JSON.stringify(user));
-    localStorage.setItem('token', token);
-    set({ user, token });
+  setAuth: (user, session) => {
+    set({ user, session });
   },
 
-  logout: () => {
-    localStorage.removeItem('user');
-    localStorage.removeItem('token');
-    set({ user: null, token: null });
+  logout: async () => {
+    await supabase.auth.signOut();
+    set({ user: null, session: null });
   },
 }));
+
+// Listen to Supabase auth changes to sync with Zustand
+supabase.auth.onAuthStateChange((_event, session) => {
+  if (session?.user) {
+    const { user_metadata } = session.user;
+    useAuthStore.getState().setAuth({
+      id: session.user.id,
+      email: session.user.email || '',
+      name: user_metadata?.name || session.user.email?.split('@')[0] || 'User',
+      role: user_metadata?.role || 'OWNER',
+      ownerId: user_metadata?.ownerId || session.user.id,
+    }, session);
+  } else {
+    useAuthStore.getState().setAuth(null, null);
+  }
+});

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Navbar } from '../../components/layout/Navbar';
-import { apiClient } from '../../api/client';
+import { supabase } from '../../lib/supabase';
+import { useAuthStore } from '../../store/authStore';
 import { ConfirmModal } from '../../components/ui/ConfirmModal';
 import toast from 'react-hot-toast';
 import { Plus, Trash2 } from 'lucide-react';
@@ -20,12 +21,15 @@ export const Expenses = () => {
   const [note, setNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
+  const user = useAuthStore(state => state.user);
+
   useEffect(() => {
-    apiClient('/salons').then(r => {
-      setSalons(r.data);
-      if (r.data.length > 0) setSelectedSalon(r.data[0].id);
-    }).catch(() => {});
-  }, []);
+    if (!user) return;
+    supabase.from('salons').select('*').eq('owner_id', user.ownerId).then(({ data }) => {
+      setSalons(data || []);
+      if (data && data.length > 0) setSelectedSalon(data[0].id);
+    });
+  }, [user]);
 
   useEffect(() => {
     if (selectedSalon) load();
@@ -34,8 +38,13 @@ export const Expenses = () => {
   const load = async () => {
     setLoading(true);
     try {
-      const res = await apiClient(`/expenses?salon_id=${selectedSalon}`);
-      setExpenses(res.data);
+      const { data, error } = await supabase
+        .from('expenses')
+        .select('*')
+        .eq('salon_id', selectedSalon)
+        .order('expense_date', { ascending: false });
+      if (error) throw error;
+      setExpenses(data || []);
     } catch (err: any) {
       toast.error(err.message || 'Failed to load expenses');
     } finally {
@@ -47,16 +56,15 @@ export const Expenses = () => {
     e.preventDefault();
     setSubmitting(true);
     try {
-      await apiClient('/expenses', {
-        method: 'POST',
-        body: JSON.stringify({
-          salon_id: selectedSalon,
-          amount: Number(amount),
-          category,
-          expense_date: date,
-          note: note.trim() || undefined,
-        }),
-      });
+      const { error } = await supabase.from('expenses').insert([{
+        salon_id: selectedSalon,
+        amount: Number(amount),
+        category,
+        expense_date: date,
+        note: note.trim() || null,
+        owner_id: user?.ownerId
+      }]);
+      if (error) throw error;
       toast.success('Expense added');
       setAmount(''); setCategory(''); setNote('');
       load();
@@ -69,7 +77,8 @@ export const Expenses = () => {
 
   const handleDelete = async (id: string) => {
     try {
-      await apiClient(`/expenses/${id}`, { method: 'DELETE' });
+      const { error } = await supabase.from('expenses').delete().eq('id', id);
+      if (error) throw error;
       toast.success('Expense deleted');
       setConfirmDelete(null);
       load();

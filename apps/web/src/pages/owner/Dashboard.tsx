@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { Navbar } from '../../components/layout/Navbar';
-import { apiClient } from '../../api/client';
+import { supabase } from '../../lib/supabase';
+import { useAuthStore } from '../../store/authStore';
 import toast from 'react-hot-toast';
 import {
   IndianRupee, Wallet, CreditCard, TrendingDown,
@@ -50,28 +51,58 @@ export const OwnerDashboard = () => {
     return dateHelpers[period]();
   }, [period, customFrom, customTo]);
 
-  useEffect(() => {
-    Promise.all([
-      apiClient('/salons').then(r => {
-        setSalons(r.data);
-      }),
-      apiClient('/subscription').then(r => setSubscription(r.data)).catch(() => {}),
-    ]);
-  }, []);
+  const user = useAuthStore(state => state.user);
 
   useEffect(() => {
-    loadEarnings();
-  }, [selectedSalon, period, customFrom, customTo]);
+    if (!user) return;
+    supabase.from('salons').select('*').eq('owner_id', user.ownerId).then(({ data }) => setSalons(data || []));
+    supabase.from('subscriptions').select('*').eq('owner_id', user.ownerId).single().then(({ data }) => setSubscription(data)).catch(() => {});
+  }, [user]);
+
+  useEffect(() => {
+    if (user) loadEarnings();
+  }, [selectedSalon, period, customFrom, customTo, user]);
 
   const loadEarnings = async () => {
+    if (!user) return;
     setLoading(true);
     try {
       const { from, to } = getRange();
-      const salonQ = selectedSalon ? `&salon_id=${selectedSalon}` : '';
-      const res = await apiClient(`/earnings?from=${from}&to=${to}${salonQ}`);
-      setEarnings(res.data);
+      
+      let servicesQuery = supabase.from('services').select('*, barbers(name)').eq('owner_id', user.ownerId).gte('service_date', from).lte('service_date', to);
+      let expensesQuery = supabase.from('expenses').select('*').eq('owner_id', user.ownerId).gte('expense_date', from).lte('expense_date', to);
+      
+      if (selectedSalon) {
+        servicesQuery = servicesQuery.eq('salon_id', selectedSalon);
+        expensesQuery = expensesQuery.eq('salon_id', selectedSalon);
+      }
+
+      const [servicesRes, expensesRes] = await Promise.all([servicesQuery, expensesQuery]);
+      
+      let cash = 0, upi = 0;
+      const barberMap = new Map();
+      servicesRes.data?.forEach(s => {
+        const price = Number(s.price);
+        if (s.payment_method === 'CASH') cash += price;
+        else if (s.payment_method === 'UPI') upi += price;
+
+        if (s.barber_id) {
+          if (!barberMap.has(s.barber_id)) barberMap.set(s.barber_id, { barberId: s.barber_id, name: s.barbers?.name || 'Unknown', total: 0, cash: 0, upi: 0 });
+          const b = barberMap.get(s.barber_id);
+          b.total += price;
+          if (s.payment_method === 'CASH') b.cash += price;
+          if (s.payment_method === 'UPI') b.upi += price;
+        }
+      });
+
+      const total_gross = cash + upi;
+      const total_expenses = expensesRes.data?.reduce((sum, e) => sum + Number(e.amount), 0) || 0;
+      const net_earning = total_gross - total_expenses;
+      const barber_breakdown = Array.from(barberMap.values()).sort((a, b) => b.total - a.total);
+
+      setEarnings({ total_gross, cash, upi, total_expenses, net_earning, barber_breakdown });
     } catch (err: any) {
-      if (!err.message?.includes('expired')) toast.error('Failed to load earnings data');
+      toast.error('Failed to load earnings data');
     } finally {
       setLoading(false);
     }

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Navbar } from '../../components/layout/Navbar';
-import { apiClient } from '../../api/client';
+import { supabase } from '../../lib/supabase';
+import { useAuthStore } from '../../store/authStore';
 import { ConfirmModal } from '../../components/ui/ConfirmModal';
 import toast from 'react-hot-toast';
 import { Store, Plus, Pencil, Trash2, MapPin, Check, X } from 'lucide-react';
@@ -18,11 +19,20 @@ export const Salons = () => {
 
   useEffect(() => { load(); }, []);
 
+  const user = useAuthStore(state => state.user);
+
   const load = async () => {
+    if (!user) return;
     setLoading(true);
     try {
-      const res = await apiClient('/salons');
-      setSalons(res.data);
+      const { data, error } = await supabase
+        .from('salons')
+        .select('*')
+        .eq('owner_id', user.ownerId)
+        .order('created_at', { ascending: false });
+        
+      if (error) throw error;
+      setSalons(data || []);
     } catch (err: any) {
       toast.error(err.message || 'Failed to load salons');
     } finally {
@@ -35,10 +45,12 @@ export const Salons = () => {
     if (!name.trim()) return;
     setCreating(true);
     try {
-      await apiClient('/salons', {
-        method: 'POST',
-        body: JSON.stringify({ name: name.trim(), address: address.trim() || undefined }),
-      });
+      const { error } = await supabase.from('salons').insert([{
+        name: name.trim(),
+        address: address.trim() || null,
+        owner_id: user?.ownerId
+      }]);
+      if (error) throw error;
       toast.success('Salon created!');
       setName(''); setAddress('');
       load();
@@ -59,10 +71,11 @@ export const Salons = () => {
 
   const handleUpdate = async (id: string) => {
     try {
-      await apiClient(`/salons/${id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ name: editName.trim(), address: editAddress.trim() || undefined }),
-      });
+      const { error } = await supabase.from('salons').update({
+        name: editName.trim(),
+        address: editAddress.trim() || null
+      }).eq('id', id);
+      if (error) throw error;
       toast.success('Salon updated');
       setEditId(null);
       load();
@@ -73,7 +86,8 @@ export const Salons = () => {
 
   const handleDelete = async (id: string) => {
     try {
-      await apiClient(`/salons/${id}`, { method: 'DELETE' });
+      const { error } = await supabase.from('salons').delete().eq('id', id);
+      if (error) throw error;
       toast.success('Salon deleted');
       setConfirmDelete(null);
       load();

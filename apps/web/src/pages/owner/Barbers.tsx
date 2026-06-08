@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Navbar } from '../../components/layout/Navbar';
-import { apiClient } from '../../api/client';
+import { supabase } from '../../lib/supabase';
+import { useAuthStore } from '../../store/authStore';
 import { ConfirmModal } from '../../components/ui/ConfirmModal';
 import toast from 'react-hot-toast';
 import { UserPlus, Trash2, Users } from 'lucide-react';
@@ -15,12 +16,15 @@ export const Barbers = () => {
   const [submitting, setSubmitting] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState<{ id: string; name: string } | null>(null);
 
+  const user = useAuthStore(state => state.user);
+
   useEffect(() => {
-    apiClient('/salons').then(r => {
-      setSalons(r.data);
-      if (r.data.length > 0) setSelectedSalon(r.data[0].id);
-    }).catch(() => {});
-  }, []);
+    if (!user) return;
+    supabase.from('salons').select('*').eq('owner_id', user.ownerId).then(({ data }) => {
+      setSalons(data || []);
+      if (data && data.length > 0) setSelectedSalon(data[0].id);
+    });
+  }, [user]);
 
   useEffect(() => {
     if (selectedSalon) loadBarbers();
@@ -28,8 +32,9 @@ export const Barbers = () => {
 
   const loadBarbers = async () => {
     try {
-      const res = await apiClient(`/salons/${selectedSalon}/barbers`);
-      setBarbers(res.data);
+      const { data, error } = await supabase.from('barbers').select('*').eq('salon_id', selectedSalon);
+      if (error) throw error;
+      setBarbers(data || []);
     } catch (err: any) {
       toast.error(err.message || 'Failed to load barbers');
     }
@@ -39,16 +44,15 @@ export const Barbers = () => {
     e.preventDefault();
     setSubmitting(true);
     try {
-      const inviteRes = await apiClient('/auth/invite-barber', {
-        method: 'POST',
-        body: JSON.stringify({ name, email, tempPassword: password }),
-      });
-      await apiClient(`/salons/${selectedSalon}/barbers/${inviteRes.data.id}`, { method: 'POST' });
-      toast.success(`${name} has been invited to the salon!`);
+      const { error } = await supabase.from('barbers').insert([{
+        name, email, salon_id: selectedSalon, owner_id: user?.ownerId
+      }]);
+      if (error) throw error;
+      toast.success(`${name} has been added to the salon! They should register using this email.`);
       setName(''); setEmail(''); setPassword('');
       loadBarbers();
     } catch (err: any) {
-      toast.error(err.message || 'Failed to invite barber');
+      toast.error(err.message || 'Failed to add barber');
     } finally {
       setSubmitting(false);
     }
@@ -57,7 +61,8 @@ export const Barbers = () => {
   const handleRemove = async () => {
     if (!confirmRemove) return;
     try {
-      await apiClient(`/salons/${selectedSalon}/barbers/${confirmRemove.id}`, { method: 'DELETE' });
+      const { error } = await supabase.from('barbers').delete().eq('id', confirmRemove.id);
+      if (error) throw error;
       toast.success(`${confirmRemove.name} removed from salon`);
       setConfirmRemove(null);
       loadBarbers();

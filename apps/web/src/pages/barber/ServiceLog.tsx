@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Navbar } from '../../components/layout/Navbar';
-import { apiClient } from '../../api/client';
+import { supabase } from '../../lib/supabase';
+import { useAuthStore } from '../../store/authStore';
 import toast from 'react-hot-toast';
 import { Scissors, CheckCircle2, Trophy, IndianRupee, AlertCircle } from 'lucide-react';
 
@@ -17,32 +18,58 @@ export const BarberServiceLog = () => {
   const [initError, setInitError] = useState('');
   const [earnings, setEarnings] = useState<any>(null);
 
+  const user = useAuthStore(state => state.user);
+  const [myBarberId, setMyBarberId] = useState('');
+
   useEffect(() => {
     const init = async () => {
+      if (!user?.email) return;
       try {
-        const res = await apiClient('/barbers/me');
-        const salons: any[] = res.data.salons || [];
-        if (salons.length === 0) {
+        const { data: barberData } = await supabase.from('barbers').select('*, salons(id, name)').eq('email', user.email).single();
+        if (!barberData) {
           setInitError('You are not assigned to any salon. Please contact your owner.');
           return;
         }
-        // Auto-select first salon
-        setSalonId(salons[0].id);
-        setSalonName(salons[0].name);
+        setSalonId(barberData.salons.id);
+        setSalonName(barberData.salons.name);
+        setMyBarberId(barberData.id);
       } catch {
         setInitError('Could not load your salon info. Please try again.');
       }
     };
     init();
-    loadLeaderboard();
-  }, []);
+  }, [user]);
+
+  useEffect(() => {
+    if (salonId && myBarberId) loadLeaderboard();
+  }, [salonId, myBarberId]);
 
   const loadLeaderboard = async () => {
     try {
       const today = fmtDate(new Date());
       const firstOfMonth = fmtDate(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
-      const res = await apiClient(`/barbers/earnings?from=${firstOfMonth}&to=${today}`);
-      setEarnings(res.data);
+      
+      const { data } = await supabase.from('services')
+        .select('*, barbers(name)')
+        .eq('salon_id', salonId)
+        .gte('service_date', firstOfMonth)
+        .lte('service_date', today);
+
+      if (!data) return;
+
+      const barberMap = new Map();
+      let myTotal = 0;
+      data.forEach(s => {
+        const price = Number(s.price);
+        if (s.barber_id === myBarberId) myTotal += price;
+
+        if (s.barber_id) {
+          if (!barberMap.has(s.barber_id)) barberMap.set(s.barber_id, { barberId: s.barber_id, name: s.barbers?.name || 'Unknown', total: 0 });
+          barberMap.get(s.barber_id).total += price;
+        }
+      });
+      const leaderboard = Array.from(barberMap.values()).sort((a, b) => b.total - a.total);
+      setEarnings({ total: myTotal, leaderboard });
     } catch {
       // non-critical, ignore
     }
@@ -57,16 +84,16 @@ export const BarberServiceLog = () => {
     setLoading(true);
     setSuccess(false);
     try {
-      await apiClient('/services', {
-        method: 'POST',
-        body: JSON.stringify({
-          salon_id: salonId,
-          name,
-          price: Number(price),
-          payment_type: paymentType,
-          service_date: fmtDate(new Date()),
-        }),
-      });
+      const { error } = await supabase.from('services').insert([{
+        salon_id: salonId,
+        barber_id: myBarberId,
+        name,
+        price: Number(price),
+        payment_method: paymentType,
+        service_date: fmtDate(new Date()),
+        owner_id: user?.ownerId
+      }]);
+      if (error) throw error;
       setSuccess(true);
       setName('');
       setPrice('');

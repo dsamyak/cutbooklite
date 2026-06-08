@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Navbar } from '../../components/layout/Navbar';
-import { apiClient } from '../../api/client';
+import { supabase } from '../../lib/supabase';
 import toast from 'react-hot-toast';
 import {
   Shield, Users, CheckCircle2, Clock, AlertCircle, XCircle,
@@ -41,10 +41,19 @@ export const AdminDashboard = () => {
   const load = async () => {
     setLoading(true);
     try {
-      const res = await apiClient('/admin/owners');
-      setOwners(res.data);
+      const { data, error } = await supabase.from('owners').select('*, salons(count), barbers(count), subscriptions(*)');
+      if (error) throw error;
+      const formatted = data.map((o: any) => ({
+        ...o,
+        _count: {
+          salons: o.salons[0]?.count || 0,
+          barbers: o.barbers[0]?.count || 0
+        },
+        subscription: o.subscriptions[0] || null
+      }));
+      setOwners(formatted || []);
     } catch (err: any) {
-      toast.error(err.message || 'Failed to load tenants');
+      toast.error('Failed to load tenants');
     } finally {
       setLoading(false);
     }
@@ -75,15 +84,14 @@ export const AdminDashboard = () => {
         ? new Date(mPeriodEnd + 'T23:59:59.000Z').toISOString()
         : null;
 
-      await apiClient(`/admin/owners/${modal.ownerId}/subscription`, {
-        method: 'PATCH',
-        body: JSON.stringify({
-          status: mStatus,
-          plan_name: mPlanName || 'Admin Plan',
-          current_period_end: periodEnd,
-          notes: mNotes || null,
-        }),
+      const { error } = await supabase.from('subscriptions').upsert({
+        owner_id: modal.ownerId,
+        status: mStatus,
+        plan_name: mPlanName || 'Admin Plan',
+        current_period_end: periodEnd,
+        notes: mNotes || null,
       });
+      if (error) throw error;
       toast.success(`Subscription updated for ${modal.ownerName}`);
       setModal(null);
       load();

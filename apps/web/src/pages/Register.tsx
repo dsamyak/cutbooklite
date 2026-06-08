@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { useAuthStore } from '../store/authStore';
-import { apiClient } from '../api/client';
+import { supabase } from '../lib/supabase';
 import { Scissors } from 'lucide-react';
 
 export const Register = () => {
@@ -10,7 +9,6 @@ export const Register = () => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const setAuth = useAuthStore(state => state.setAuth);
   const navigate = useNavigate();
 
   const handleRegister = async (e: React.FormEvent) => {
@@ -18,11 +16,17 @@ export const Register = () => {
     setError('');
     setLoading(true);
     try {
-      const res = await apiClient('/auth/register', {
-        method: 'POST',
-        body: JSON.stringify({ name, email, password })
+      const { data, error: signUpError } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            name,
+            role: 'OWNER'
+          }
+        }
       });
-      setAuth(res.data, res.token);
+      if (signUpError) throw signUpError;
       navigate('/dashboard');
     } catch (err: any) {
       setError(err.message);
