@@ -67,9 +67,8 @@ VITE_SUPABASE_ANON_KEY="your-anon-key"
 2. Navigate to the [Cloudflare Dashboard](https://dash.cloudflare.com/) and go to **Pages > Create a project > Connect to Git**.
 3. Select your repository.
 4. Build command: `npm run build`
-5. Build output directory: `apps/web/dist`
+5. Build output directory: `dist`
 6. Add Environment Variables:
-   * `NODE_VERSION`: `18` (or your preferred version)
    * `VITE_SUPABASE_URL`: `<your-url>`
    * `VITE_SUPABASE_ANON_KEY`: `<your-key>`
 7. Click **Save and Deploy**. Cloudflare Pages will build and deploy your application globally.
