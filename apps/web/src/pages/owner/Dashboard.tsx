@@ -56,7 +56,7 @@ export const OwnerDashboard = () => {
   useEffect(() => {
     if (!user) return;
     supabase.from('salons').select('*').eq('owner_id', user.ownerId).then(({ data }) => setSalons(data || []));
-    supabase.from('subscriptions').select('*').eq('owner_id', user.ownerId).single().then(({ data }) => setSubscription(data)).catch(() => {});
+    supabase.from('subscriptions').select('*').eq('owner_id', user.ownerId).single().then(({ data }) => { if (data) setSubscription(data); });
   }, [user]);
 
   useEffect(() => {
