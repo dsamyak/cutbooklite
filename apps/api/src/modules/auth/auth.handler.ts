@@ -63,7 +63,7 @@ export async function requestOtp(req: Request, res: Response, next: NextFunction
       res.status(404).json(failure('USER_NOT_FOUND', 'No account found with this phone number'));
       return;
     }
-    const otp = authService.generateOtp(phone);
+    const otp = await authService.generateOtp(phone);
     // In production: send SMS. For now log it.
     logger.info(`OTP for ${phone}: ${otp}`);
     res.json(success({ message: 'OTP sent successfully' }));
@@ -73,7 +73,7 @@ export async function requestOtp(req: Request, res: Response, next: NextFunction
 export async function verifyOtp(req: Request, res: Response, next: NextFunction) {
   try {
     const { phone, otp } = req.body;
-    const valid = authService.verifyOtp(phone, otp);
+    const valid = await authService.verifyOtp(phone, otp);
     if (!valid) {
       res.status(401).json(failure('INVALID_OTP', 'Invalid or expired OTP'));
       return;

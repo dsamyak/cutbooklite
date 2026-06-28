@@ -5,9 +5,11 @@ import { AppError } from '../../lib/response';
 import { Role } from '@cutbooklite/shared';
 import { JwtPayload } from '../../middleware/auth';
 import crypto from 'crypto';
+import { redis } from '../../lib/redis';
 
 const ACCESS_EXPIRES = process.env.JWT_ACCESS_EXPIRES_IN || '15m';
 const REFRESH_EXPIRES_DAYS = 30;
+const OTP_TTL_SECONDS = 300; // 5 minutes
 
 export function signAccessToken(payload: JwtPayload): string {
   return jwt.sign(payload, process.env.JWT_SECRET!, { expiresIn: ACCESS_EXPIRES } as jwt.SignOptions);
@@ -132,20 +134,21 @@ export async function registerSalon(data: {
   });
 }
 
-// In-memory OTP store for demo (use Redis in production)
-const otpStore = new Map<string, { otp: string; expires: number }>();
+// Redis-backed OTP store (works across instances, auto-expires)
+function otpKey(phone: string): string {
+  return `otp:${phone}`;
+}
 
-export function generateOtp(phone: string): string {
+export async function generateOtp(phone: string): Promise<string> {
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
-  otpStore.set(phone, { otp, expires: Date.now() + 5 * 60 * 1000 });
+  await redis.setex(otpKey(phone), OTP_TTL_SECONDS, otp);
   return otp;
 }
 
-export function verifyOtp(phone: string, otp: string): boolean {
-  const stored = otpStore.get(phone);
-  if (!stored) return false;
-  if (Date.now() > stored.expires) { otpStore.delete(phone); return false; }
-  if (stored.otp !== otp) return false;
-  otpStore.delete(phone);
+export async function verifyOtp(phone: string, otp: string): Promise<boolean> {
+  const stored = await redis.get<string>(otpKey(phone));
+  if (!stored || stored !== otp) return false;
+  await redis.del(otpKey(phone));
   return true;
 }
+

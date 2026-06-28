@@ -21,3 +21,7 @@ prisma.$on('query' as never, (e: { query: string; duration: number }) => {
     logger.debug(`Query: ${e.query} (${e.duration}ms)`);
   }
 });
+
+export async function disconnectPrisma(): Promise<void> {
+  await prisma.$disconnect();
+}
